@@ -277,9 +277,6 @@ class Connector:
                 break
 
             for item in response[key]:
-                # Filter out groups from cloud providers
-                # TODO: validate checks
-                # if item.get("cloudType") is None and item.get("type") != "aws-account":
                 paged[item.get("ID")] = item
 
             id_value = response[key][-1]["ID"]
@@ -292,46 +289,43 @@ class Connector:
         return paged
 
     @property
-    def computers(self, id=None):
+    def computers(self, id=None) -> Dict:
         if self._computers is None:
             self._computers = self.get_paged("computers", "computers")
         return self._computers
 
     @property
-    def policies(self, id=None):
+    def policies(self, id=None) -> Dict:
         if self._policies is None:
             self._policies = self.get_paged("policies", "policies")
         return self._policies
 
     @property
-    def computergroups(self, id=None):
+    def computergroups(self, id=None) -> Dict:
         if self._computergroups is None:
             self._computergroups = self.get_paged("computergroups", "computerGroups")
         return self._computergroups
 
     @property
-    def smartfolders(self, id=None):
+    def smartfolders(self, id=None) -> Dict:
         if self._smartfolders is None:
             self._smartfolders = self.get_paged("smartfolders", "smartFolders")
         return self._smartfolders
 
     @property
-    def reporttemplates(self, id=None):
+    def reporttemplates(self, id=None) -> Dict:
         if self._reporttemplates is None:
             self._reporttemplates = self.get_paged("reporttemplates", "reportTemplates")
         return self._reporttemplates
 
-        self._administrators = None
-        self._contacts = None
-
     @property
-    def administrators(self, id=None):
+    def administrators(self, id=None) -> Dict:
         if self._administrators is None:
             self._administrators = self.get_paged("administrators", "administrators")
         return self._administrators
 
     @property
-    def contacts(self, id=None):
+    def contacts(self, id=None) -> Dict:
         if self._contacts is None:
             self._contacts = self.get_paged("contacts", "contacts")
         return self._contacts
@@ -681,6 +675,7 @@ def merge_scheduled_tasks(product, data, taskprefix="", policysuffix="") -> None
 # #############################################################################
 # Mappers
 # #############################################################################
+@typechecked
 def map_computerFilter(source, target, data, policysuffix="") -> Dict:
 
     # "computerFilter": {
@@ -728,7 +723,7 @@ def map_computerFilter(source, target, data, policysuffix="") -> Dict:
 
     return params
 
-
+@typechecked
 def map_computerGroup(source, target, data) -> Dict:
 
     # "computerGroupID": 0,
@@ -748,6 +743,7 @@ def map_computerGroup(source, target, data) -> Dict:
     return params
 
 
+@typechecked
 def map_recipients(source, target, data) -> Dict:
 
     # "recipients": {
@@ -785,7 +781,8 @@ def map_recipients(source, target, data) -> Dict:
     return params
 
 
-def map_computerFilter_computerID(source, target, data) -> Dict:
+@typechecked
+def map_computerFilter_computerID(source, target, data) -> int | None:
 
     computerID = None
 
@@ -803,7 +800,8 @@ def map_computerFilter_computerID(source, target, data) -> Dict:
     return computerID
 
 
-def map_computerFilter_computerGroupID(source, target, data) -> Dict:
+@typechecked
+def map_computerFilter_computerGroupID(source, target, data) -> int | None:
 
     computerGroupID = None
 
@@ -833,7 +831,8 @@ def map_computerFilter_computerGroupID(source, target, data) -> Dict:
     return computerGroupID
 
 
-def map_computerFilter_policyID(source, target, data, policysuffix="") -> Dict:
+@typechecked
+def map_computerFilter_policyID(source, target, data, policysuffix="") -> int | None:
 
     policyID = None
 
@@ -865,7 +864,8 @@ def map_computerFilter_policyID(source, target, data, policysuffix="") -> Dict:
     return policyID
 
 
-def map_computerFilter_smartFolderID(source, target, data) -> Dict:
+@typechecked
+def map_computerFilter_smartFolderID(source, target, data) -> int | None:
 
     smartFolderID = None
 
@@ -898,7 +898,8 @@ def map_computerFilter_smartFolderID(source, target, data) -> Dict:
     return smartFolderID
 
 
-def map_recipients_administratorIDs(source, target, data) -> Dict:
+@typechecked
+def map_recipients_administratorIDs(source, target, data) -> List | None:
 
     administratorIDs = None
 
@@ -921,7 +922,8 @@ def map_recipients_administratorIDs(source, target, data) -> Dict:
     return administratorIDs
 
 
-def map_recipients_contactIDs(source, target, data) -> Dict:
+@typechecked
+def map_recipients_contactIDs(source, target, data) -> List | None:
 
     contactIDs = None
 
