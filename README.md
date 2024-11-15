@@ -25,10 +25,8 @@ Migrating Deep Security to Vision One Server & Workload Protection:
 4. Merge the Scheduled Tasks: `scheduled-tasks.py --mergetasks ds --policysuffix " (2024-11-14T16:26:36Z 10.0.0.84)"`
 
 > ***Notes:***
-> 
-> TODO: Contacts are automatically created if not existent and they have a valid email address.
-> 
-> Administrators will not be migrated since the API-Key of SWP does not have the necessary permissions to create Administrators.
+> - Contacts with the predefined role of 'Auditor' are automatically created if they do not exist in the target environment.
+> - Administrators will not be migrated since the API-Key of SWP does not have the necessary permissions to create Administrators.
 
 ## Preparation of the Scripts
 

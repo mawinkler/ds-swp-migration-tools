@@ -129,6 +129,7 @@ class Connector:
         self._reporttemplates = None
         self._administrators = None
         self._contacts = None
+        self._roles = None
 
         # SWP / DS
         if endpoint == ENDPOINT_SWP:
@@ -330,6 +331,12 @@ class Connector:
             self._contacts = self.get_paged("contacts", "contacts")
         return self._contacts
 
+    @property
+    def roles(self, id=None) -> Dict:
+        if self._roles is None:
+            self._roles = self.get_paged("roles", "roles")
+        return self._roles
+
     @typechecked
     def get_by_name(self, endpoint, key, name) -> int:
         """Retrieve by name"""
@@ -529,35 +536,32 @@ def add_scheduled_task(target, data) -> int:
         else:
             raise tre
 
-    # if product == ENDPOINT_SWP:
-    #     data.pop("ID")
-    #     try:
-    #         response = connector_swp.post(endpoint=endpoint, data=data)
-    #     except TrendRequestError as tre:
-    #         if "already exists" in tre.message:
-    #             id = connector_swp.get_by_name(
-    #                 endpoint=endpoint, key="scheduledTasks", name=data.get("name")
-    #             )
-    #             _LOGGER.debug(f"Scheduled task with name: {data.get("name")} already exists with id: {id}")
-    #             return id
-    #         else:
-    #             raise tre
+    return response.get("ID")
 
-    # elif product == ENDPOINT_DS:
-    #     data.pop("ID")
-    #     try:
-    #         response = connector_ds.post(endpoint=endpoint, data=data)
-    #     except TrendRequestError as tre:
-    #         if "already exists" in tre.message:
-    #             id = connector_ds.get_by_name(
-    #                 endpoint=endpoint, key="scheduledTasks", name=data.get("name")
-    #             )
-    #             _LOGGER.debug(f"Scheduled task with name: {data.get("name")} already exists with id: {id}")
-    #             return id
-    #         else:
-    #             raise tre
-    # else:
-    #     raise ValueError(f"Invalid endpoint: {product}")
+
+@typechecked
+def add_contact(target, data) -> int:
+    """Add Contact."""
+
+    endpoint = "contacts"
+
+    data.pop("ID")
+
+    # Get roleID for Auditor in target environment
+    for role in target.roles.values():
+        if role.get("v1RoleName") == "Auditor":
+            data["roleID"] = role.get("ID")
+            break
+
+    try:
+        response = target.post(endpoint=endpoint, data=data)
+    except TrendRequestError as tre:
+        if "already exists" in tre.message:
+            id = target.get_by_name(endpoint=endpoint, key="contacts", name=data.get("name"))
+            _LOGGER.info(f"Contact with name: {data.get("name")} already exists with id: {id}")
+            return id
+        else:
+            raise tre
 
     return response.get("ID")
 
@@ -584,8 +588,7 @@ def merge_scheduled_tasks(product, data, taskprefix="", policysuffix="") -> None
 
     _LOGGER.debug(f"Task prefix: {taskprefix}, Policy suffix: {policysuffix}")
     for item in data.values():
-        # print("---------------------------------------")
-        # pp(item)
+
         source_taskID = item.get("ID")
         _LOGGER.info(f"Processing Scheduled Task: {item.get("name")} with ID: {source_taskID}")
         item["name"] = f"{taskprefix} {item["name"]}"
@@ -656,11 +659,9 @@ def merge_scheduled_tasks(product, data, taskprefix="", policysuffix="") -> None
                     policysuffix,
                 )
 
-            # pp(item)
-
             _LOGGER.info(f"Adding Scheduled Task: {item.get("name")}")
             target_taskID = add_scheduled_task(target, item)
-            # print("+++++++++++++++++++++++++++++++++++++++")
+
             merged.append(target_taskID)
             remaining.remove(source_taskID)
         except ValueError as ve:
@@ -722,6 +723,7 @@ def map_computerFilter(source, target, data, policysuffix="") -> Dict:
         params["smartFolderID"] = smartFolderID
 
     return params
+
 
 @typechecked
 def map_computerGroup(source, target, data) -> Dict:
@@ -937,11 +939,13 @@ def map_recipients_contactIDs(source, target, data) -> List | None:
                     targetContactID = contact.get("ID")
                     if contactIDs is None:
                         contactIDs = []
-                    contactIDs.append(contact.get("ID"))
+                    contactIDs.append(targetContactID)
                     break
 
             if targetContactID is None:
-                raise ValueError(f"Unsuccessful Contact match: {id}")
+                targetContactID = add_contact(target, source.contacts[id])
+                _LOGGER.info(f"Contact created: {targetContactID} with {emailAddress}")
+                contactIDs.append(targetContactID)
 
     return contactIDs
 
@@ -984,9 +988,9 @@ def main() -> None:
 
     # pp(connector_ds.computers)
     # pp(connector_swp.smartfolders)
-    # pp(connector_ds.administrators)
-    # pp(connector_ds.contacts)
+    # pp(connector_ds.administrators)  # only DS
     # pp(connector_swp.contacts)
+    # pp(connector_swp.roles)
 
     if args.listtasks:
         tasks = list_scheduled_tasks(args.listtasks[0].lower())
