@@ -74,8 +74,8 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 # HERE
-REGION_SWP = "us-1."  # Examples: eu-1. sg-1.
-API_BASE_URL_DS = f"https://3.76.217.110:4119/api/"
+REGION_SWP = "us-1."  # Examples: de-1. sg-1.
+API_BASE_URL_DS = f"https://3.120.149.217:4119/api/"
 # /HERE
 
 # Do not change

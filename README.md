@@ -14,40 +14,41 @@ git clone https://github.com/mawinkler/ds-swp-migration-tools.git
 cd ds-swp-migration-tools
 ```
 
-## Groups and Folders
+## How the Scripts Support the Migration Workflow
 
-The Python script `groups-and-folders.py` implements for following functionality:
+Migrating Deep Security to Vision One Server & Workload Protection:
 
-- List Computer Groups in DS and SWP
-- List Smart Folders in DS and SWP
-- Merge Computer Group structure from DS with SWP and vice versa
-- Merge Smart Folders structure from DS with SWP and vice versa
+1. Create Computer Group structure in SWP: `groups-and-folders.py --mergegroups ds`
+2. Create Smart Folder structure in SWP: `groups-and-folders.py --mergefolders ds`
+3. Migrate the Common Objects, Policies, and Computers with the official Migration Tool
+   1. The migrated policies will get a suffix generated (e.g. ` (2024-11-14T16:26:36Z 10.0.0.84)`). Use this suffix as the `--policysuffix` for `scheduled-tasks.py` in the next step.
+4. Merge the Scheduled Tasks: `scheduled-tasks.py --mergetasks ds --policysuffix " (2024-11-14T16:26:36Z 10.0.0.84)"`
 
-***Requirements***
+> ***Notes:***
+> 
+> TODO: Contacts are automatically created if not existent and they have a valid email address.
+> 
+> Administrators will not be migrated since the API-Key of SWP does not have the necessary permissions to create Administrators.
 
-- Set environment variable API_KEY_SWP with the API key of the
+## Preparation of the Scripts
+
+- Set environment variable `API_KEY_SWP` with the API key of the
   Server & Workload Security instance to use.
-- Set environment variable API_KEY_DS with the API key of the
+- Set environment variable `API_KEY_DS` with the API key of the
   Deep Security instance to use.
 - Adapt the constants in between
   `# HERE`
   and
   `# /HERE`
-  to your requirements
+  within the scripts to your requirements.
+  ```sh
+  # HERE
+  REGION_SWP = "us-1."  # Examples: de-1. sg-1.
+  API_BASE_URL_DS = "https://3.76.217.110:4119/api/"
+  # /HERE
+  ```
 
-***Options***
-
-```sh
--h, --help           show this help message and exit
---listgroups TYPE    list computer groups (TYPE=ds|swp)
---mergegroups TYPE   merge computer groups from given source (TYPE=ds|swp)
---listfolders TYPE   list smart folders (TYPE=ds|swp)
---mergefolders TYPE  list smart folders from given source (TYPE=ds|swp)
-```
-
-***Usage***
-
-Change to the directory and install dependencies
+Change to the directory of the desired script and install dependencies:
 
 ```sh
 cd groups-and-folders
@@ -57,39 +58,68 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Adapt two variables in `groups-and-folders.py` in lines 77 and 78:
+## Groups and Folders
+
+The Python script `groups-and-folders.py` implements for following functionality:
+
+- List Computer Groups in DS and SWP
+- List Smart Folders in DS and SWP
+- Merge Computer Group structure from DS with SWP and vice versa
+- Merge Smart Folders structure from DS with SWP and vice versa
+
+***Options and Examples***
 
 ```sh
-# HERE
-REGION_SWP = "us-1."  # Examples: eu-1. sg-1.
-API_BASE_URL_DS = f"https://3.76.217.110:4119/api/"
-# /HERE
+usage: python3 groups-and-folders.py [-h] [--listgroups TYPE] [--mergegroups TYPE] [--listfolders TYPE] [--mergefolders TYPE]
+
+List and merge Computer Groups and Smart Folders in between DS and SWP
+
+options:
+  -h, --help           show this help message and exit
+  --listgroups TYPE    list computer groups (TYPE=ds|swp)
+  --mergegroups TYPE   merge computer groups from given source (TYPE=ds|swp)
+  --listfolders TYPE   list smart folders (TYPE=ds|swp)
+  --mergefolders TYPE  list smart folders from given source (TYPE=ds|swp)
+
+Examples:
+--------------------------------
+# Merge Computer Groups from DS with SWP
+$ ./groups-and-folders.py --mergegroups ds
+
+# List Smart Folders in SWP
+$ ./groups-and-folders.py --listfolders swp
 ```
 
-Example usage:
+## Scheduled Tasks (ALPHA)
+
+The Python script `scheduled-tasks.py` implements for following functionality:
+
+- List Scheduled Tasks in DS and SWP
+- Merge Scheduled Tasks from DS with SWP and vice versa
+
+***Options and Examples***
 
 ```sh
-# List current Smart Folders configured in DS
-./groups-and-folders.py --listfolders ds
+usage: python3 scheduled-tasks.py [-h] [--listtasks TYPE] [--mergetasks TYPE] [--policysuffix POLICYSUFFIX] [--taskprefix TASKPREFIX]
 
-# List current Groups configured in DS
-./groups-and-folders.py --listgroups ds
+List and merge Scheduled Tasks in between DS and SWP
 
-# List current Smart Folders configured in SWP
-./groups-and-folders.py --listfolders swp
+options:
+  -h, --help            show this help message and exit
+  --listtasks TYPE      list scheduled tasks (TYPE=ds|swp)
+  --mergetasks TYPE     merge scheduled tasks from given source (TYPE=ds|swp)
+  --policysuffix POLICYSUFFIX
+                        Optional policy name suffix.
+  --taskprefix TASKPREFIX
+                        Optional task name prefix.
 
-# List current Groups configured in SWP
-./groups-and-folders.py --listgroups swp
+Examples:
+--------------------------------
+# Merge Scheduled Tasks from DS with SWP
+$ ./scheduled-tasks.py --mergetasks ds --policysuffix " (2024-11-14T16:26:36Z 10.0.0.84)" --taskprefix "DS"
 
-# Merge current Groups in DS with Groups in SWP
-# Existing Groups in SWP will not be overwritten, non-existing Groups will be merged into
-# the hierarchy.
-./groups-and-folders.py --mergegroups ds
-
-# Merge current Smart Folders in DS with Smart Folders in SWP
-# Existing Smart Folders in SWP will not be overwritten, non-existing Smart Folders will
-# be merged into the hierarchy.
-./groups-and-folders.py --mergefolders ds
+# List Scheduled Tasks in SWP
+$ ./scheduled-tasks.py --listtasks swp
 ```
 
 ## Support
