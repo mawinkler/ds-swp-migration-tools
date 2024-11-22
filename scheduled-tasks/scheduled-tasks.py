@@ -531,7 +531,7 @@ def add_scheduled_task(target, data) -> int:
     except TrendRequestError as tre:
         if "already exists" in tre.message:
             id = target.get_by_name(endpoint=endpoint, key="scheduledTasks", name=data.get("name"))
-            _LOGGER.info(f"Scheduled task with name: {data.get("name")} already exists with id: {id}")
+            _LOGGER.info(f"Scheduled task with name: {data.get('name')} already exists with id: {id}")
             return id
         else:
             raise tre
@@ -558,7 +558,7 @@ def add_contact(target, data) -> int:
     except TrendRequestError as tre:
         if "already exists" in tre.message:
             id = target.get_by_name(endpoint=endpoint, key="contacts", name=data.get("name"))
-            _LOGGER.info(f"Contact with name: {data.get("name")} already exists with id: {id}")
+            _LOGGER.info(f"Contact with name: {data.get('name')} already exists with id: {id}")
             return id
         else:
             raise tre
@@ -590,8 +590,8 @@ def merge_scheduled_tasks(product, data, taskprefix="", policysuffix="") -> None
     for item in data.values():
 
         source_taskID = item.get("ID")
-        _LOGGER.info(f"Processing Scheduled Task: {item.get("name")} with ID: {source_taskID}")
-        item["name"] = f"{taskprefix} {item["name"]}"
+        _LOGGER.info(f"Processing Scheduled Task: {item.get('name')} with ID: {source_taskID}")
+        item["name"] = f"{taskprefix} {item['name']}"
 
         try:
             if "checkForSecurityUpdatesTaskParameters" in item:
@@ -659,7 +659,7 @@ def merge_scheduled_tasks(product, data, taskprefix="", policysuffix="") -> None
                     policysuffix,
                 )
 
-            _LOGGER.info(f"Adding Scheduled Task: {item.get("name")}")
+            _LOGGER.info(f"Adding Scheduled Task: {item.get('name')}")
             target_taskID = add_scheduled_task(target, item)
 
             merged.append(target_taskID)
@@ -792,12 +792,12 @@ def map_computerFilter_computerID(source, target, data) -> int | None:
     source_biosUUID = source.computers[data.get("computerID")].get("biosUUID")
     for computer in target.computers.values():
         if computer.get("biosUUID") == source_biosUUID:
-            _LOGGER.debug(f"Successful Computer match: {data.get("computerID")} -> {computer.get("ID")}")
+            _LOGGER.debug(f"Successful Computer match: {data.get('computerID')} -> {computer.get('ID')}")
             computerID = computer.get("ID")
             break
 
     if computerID is None:
-        raise ValueError(f"Unsuccessful Computer match: {data.get("computerID")}")
+        raise ValueError(f"Unsuccessful Computer match: {data.get('computerID')}")
 
     return computerID
 
@@ -823,12 +823,12 @@ def map_computerFilter_computerGroupID(source, target, data) -> int | None:
                 target_parentGroupName = target.computergroups[target_parentGroupID].get("name")
             # If we handle a root group both parent names will be None and therefore equal
             if target_groupName == source_groupName and target_parentGroupName == source_parentGroupName:
-                _LOGGER.debug(f"Successful Computer Group match: {data.get("computerGroupID")} -> {target_groupID}")
+                _LOGGER.debug(f"Successful Computer Group match: {data.get('computerGroupID')} -> {target_groupID}")
                 computerGroupID = target_groupID
                 break
 
     if computerGroupID is None:
-        raise ValueError(f"Unsuccessful Computer Group match: {data.get("computerGroupID")}")
+        raise ValueError(f"Unsuccessful Computer Group match: {data.get('computerGroupID')}")
 
     return computerGroupID
 
@@ -856,12 +856,12 @@ def map_computerFilter_policyID(source, target, data, policysuffix="") -> int | 
                 target_parentPolicyName = target_parentPolicyName.removesuffix(policysuffix)
             # If we handle a root policy both parent names will be None and therefore equal
             if target_policyName == source_policyName and target_parentPolicyName == source_parentPolicyName:
-                _LOGGER.debug(f"Successful Policy match: {data.get("policyID")} -> {target_policyID}")
+                _LOGGER.debug(f"Successful Policy match: {data.get('policyID')} -> {target_policyID}")
                 policyID = target_policyID
                 break
 
     if policyID is None:
-        raise ValueError(f"Unsuccessful Policy match: {data.get("policyID")}")
+        raise ValueError(f"Unsuccessful Policy match: {data.get('policyID')}")
 
     return policyID
 
@@ -890,12 +890,12 @@ def map_computerFilter_smartFolderID(source, target, data) -> int | None:
                 target_smartFolderName == source_smartFolderName
                 and target_parentSmartFolderName == source_parentSmartFolderName
             ):
-                _LOGGER.debug(f"Successful Smart Folder match: {data.get("smartFolderID")} -> {target_smartFolderID}")
+                _LOGGER.debug(f"Successful Smart Folder match: {data.get('smartFolderID')} -> {target_smartFolderID}")
                 smartFolderID = target_smartFolderID
                 break
 
     if smartFolderID is None:
-        raise ValueError(f"Unsuccessful Smart Folder match: {data.get("smartFolderID")}")
+        raise ValueError(f"Unsuccessful Smart Folder match: {data.get('smartFolderID')}")
 
     return smartFolderID
 
@@ -905,7 +905,7 @@ def map_recipients_administratorIDs(source, target, data) -> List | None:
 
     administratorIDs = None
 
-    _LOGGER.warning(f"Unable to match Administrators, ignored: {data.get("administratorIDs")}")
+    _LOGGER.warning(f"Unable to match Administrators, ignored: {data.get('administratorIDs')}")
     # administratorIDs = []
     # for id in data.get("administratorIDs"):
     #     emailAddress = source.administrators[id].get("emailAddress")
@@ -913,7 +913,7 @@ def map_recipients_administratorIDs(source, target, data) -> List | None:
     #         targetAdministratorID = None
     #         for administrator in target.administrators.values():
     #             if administrator.get("emailAddress") == emailAddress:
-    #                 _LOGGER.debug(f"Successful Administrator match: {data.get("ID")} -> {administrator.get("ID")}")
+    #                 _LOGGER.debug(f"Successful Administrator match: {data.get('ID')} -> {administrator.get('ID')}")
     #                 targetAdministratorID = administrator.get("ID")
     #                 administratorIDs.append(administrator.get("ID"))
     #                 break
@@ -935,7 +935,7 @@ def map_recipients_contactIDs(source, target, data) -> List | None:
             targetContactID = None
             for contact in target.contacts.values():
                 if contact.get("emailAddress") == emailAddress:
-                    _LOGGER.debug(f"Successful Contact match: {id} -> {contact.get("ID")}")
+                    _LOGGER.debug(f"Successful Contact match: {id} -> {contact.get('ID')}")
                     targetContactID = contact.get("ID")
                     if contactIDs is None:
                         contactIDs = []

@@ -434,7 +434,7 @@ def add_group(product, data) -> int:
                 id = connector_swp.get_by_name(
                     endpoint=endpoint, key="computerGroups", name=data.get("name"), parent_id=data.get("parentGroupID")
                 )
-                _LOGGER.debug(f"Group with name: {data.get("name")} already exists with id: {id}")
+                _LOGGER.debug(f"Group with name: {data.get('name')} already exists with id: {id}")
                 return id
             else:
                 raise tre
@@ -448,7 +448,7 @@ def add_group(product, data) -> int:
                 id = connector_ds.get_by_name(
                     endpoint=endpoint, key="computerGroups", name=data.get("name"), parent_id=data.get("parentGroupID")
                 )
-                _LOGGER.debug(f"Group with name: {data.get("name")} already exists with id: {id}")
+                _LOGGER.debug(f"Group with name: {data.get('name')} already exists with id: {id}")
                 return id
             else:
                 raise tre
@@ -475,7 +475,7 @@ def add_folder(product, data) -> int:
                     name=data.get("name"),
                     parent_id=data.get("parentSmartFolderID"),
                 )
-                _LOGGER.debug(f"Smart Folder with name: {data.get("name")} already exists with id: {id}")
+                _LOGGER.debug(f"Smart Folder with name: {data.get('name')} already exists with id: {id}")
                 return id
             else:
                 raise tre
@@ -492,7 +492,7 @@ def add_folder(product, data) -> int:
                     name=data.get("name"),
                     parent_id=data.get("parentSmartFolderID"),
                 )
-                _LOGGER.debug(f"Smart Folder name: {data.get("name")} already exists with id: {id}")
+                _LOGGER.debug(f"Smart Folder name: {data.get('name')} already exists with id: {id}")
                 return id
             else:
                 raise tre
@@ -535,7 +535,7 @@ def merge_groups(product, data) -> None:
         if item.get("parentGroupID") is None:
             local_id = item.get("ID")
             _LOGGER.info(f"Adding root group {local_id}")
-            item["name"] = f"{item["name"]}"
+            item["name"] = f"{item['name']}"
             tree[local_id] = add_group(target, item)
 
         elif item.get("parentGroupID") in tree:
@@ -543,7 +543,7 @@ def merge_groups(product, data) -> None:
             parent_id = tree.get(item.get("parentGroupID"))
             _LOGGER.info(f"Adding child group {local_id} to {parent_id}")
             item["parentGroupID"] = parent_id
-            item["name"] = f"{item["name"]}"
+            item["name"] = f"{item['name']}"
             tree[local_id] = add_group(target, item)
 
         else:
@@ -572,7 +572,7 @@ def merge_folders(product, data) -> None:
         if item.get("parentSmartFolderID") is None:
             local_id = item.get("ID")
             _LOGGER.info(f"Adding root folder {local_id}")
-            item["name"] = f"{item["name"]}"
+            item["name"] = f"{item['name']}"
             tree[local_id] = add_folder(target, item)
 
         elif item.get("parentSmartFolderID") in tree:
@@ -580,7 +580,7 @@ def merge_folders(product, data) -> None:
             parent_id = tree.get(item.get("parentSmartFolderID"))
             _LOGGER.info(f"Adding child folder {local_id} to {parent_id}")
             item["parentSmartFolderID"] = parent_id
-            item["name"] = f"{item["name"]}"
+            item["name"] = f"{item['name']}"
             tree[local_id] = add_folder(target, item)
 
         else:
