@@ -110,6 +110,11 @@ $ ./aio-migrate.py --scheduled-tasks 1 --destination 2
 
 Migrating Vision One Server & Workload Protection to another instance of Vision One Server & Workload Protection:
 
+> ***Example below assumes:***
+>
+> - Destination SWP is configured as ID 1
+> - Source SWP is configured as ID 2
+
 1. Create Computer Group structure in SWP: `./aio-migrate.py --groups 2 --destination 1`
 2. Create Smart Folder structure in SWP: `./aio-migrate.py --folders 2 --destination 1`
 3. Export required policies starting with the relevant root policy using `Export --> Export Selected to XML (For Import)...` in the source SWP.
@@ -122,9 +127,14 @@ Migrating Vision One Server & Workload Protection to another instance of Vision 
 > - Contacts with the predefined role of 'Auditor' are automatically created if they do not exist in the target environment.
 > - Administrators will not be migrated since the API-Key of SWP does not have the necessary permissions to create Administrators.
 
-## How the Scripts Support the Migration Workflow
+## How to Migrate from DS to SWP
 
 Migrating Deep Security to Vision One Server & Workload Protection:
+
+> ***Example below assumes:***
+>
+> - Destination SWP is configured as ID 1
+> - Source DS is configured as ID 2
 
 1. Create Computer Group structure in SWP: `./aio-migrate.py --groups 2 --destination 1`
 2. Create Smart Folder structure in SWP: `./aio-migrate.py --folders 2 --destination 1`
