@@ -1,6 +1,17 @@
 # Deep Security to Server & Workload Protection Migration Tools
 
-This repo hosts tools to support a migration from Deep Security to Vision One Server & Workload Protection. Currently there is only one, but more are likely to come.
+> ***Note:***
+>
+> ***These scripts are work-in-progress and require further testing. Please exercise caution when using them.***
+
+This repo hosts tools to support a migration of
+
+- Computer Groups
+- Smart Folders
+- Scheduled Tasks
+- Event-based Tasks
+
+in between Deep Security or Vision One Server & Workload Protection instances.
 
 Abbreviations used:
 
@@ -11,26 +22,126 @@ Get the code:
 
 ```sh
 git clone https://github.com/mawinkler/ds-swp-migration-tools.git
-cd ds-swp-migration-tools
+cd ds-swp-migration-tools/aio-migrate
+
+python3 -m venv venv && source venv/bin/activate
+
+pip install -r requirements.txt
 ```
+
+## Configuration
+
+In `aio-migrate`, create a `config.yaml` based on the sample provided:
+
+```yaml
+endpoints:
+  - type: swp
+    url: https://workload.us-1.cloudone.trendmicro.com/api/
+    api_key: <SWP API KEY>
+  - type: swp
+    url: https://workload.de-1.cloudone.trendmicro.com/api/
+    api_key: <SWP API KEY>
+  - type: ds
+    url: https://<IP OF DSM>:4119/api/
+    api_key: <DS API KEY>
+```
+
+## Entpoint IDs
+
+The script supports multiple endpoints, i.e. instances of SWP and DS. Different actions offered by the script require endpoint IDs to determine which endpoint data should be migrated to which other endpoint. To retrieve the endpoint IDs, run the following command:
+
+```sh
+./aio-migrate.py --list
+```
+
+```sh
+2025-05-20 10:58:16 INFO (MainThread) [<module>] Connectors initialized: 3
+ID: 1: Type: swp, Url: https://workload.us-1.cloudone.trendmicro.com/api/, API Key: d24XUMI=
+ID: 2: Type: swp, Url: https://workload.de-1.cloudone.trendmicro.com/api/, API Key: +4mWcvA=
+ID: 3: Type: ds, Url: https://3.120.149.217:4119/api/, API Key: Wpm89MA=
+```
+
+## Get Help
+
+Run:
+```sh
+./aio-migrate.py --help
+```
+
+```sh
+2025-05-19 15:38:49 INFO (MainThread) [<module>] Connectors initialized: 3
+usage: python3 aio-migrate.py [-h] [--list | --no-list] [--groups | --no-groups] [--folders | --no-folders] [--scheduled-tasks | --no-scheduled-tasks] [--event-based-tasks | --no-event-based-tasks] [--destination [DESTINATION-ID]] [--policysuffix POLICYSUFFIX] [--taskprefix TASKPREFIX] [SOURCE-ID]
+
+List and migrate objects in between DS and SWP
+
+positional arguments:
+  SOURCE-ID             Source Id
+
+options:
+  -h, --help            show this help message and exit
+  --list                List configured endpoints
+  --groups              List or manage computer groups
+  --folders             List or manage smart folders
+  --scheduled-tasks     List or manage scheduled tasks
+  --event-based-tasks   List or manage event-based tasks
+  --destination [DESTINATION-ID]
+                        Destination Id
+  --policysuffix POLICYSUFFIX
+                        Optional policy name suffix.
+  --taskprefix TASKPREFIX
+                        Optional task name prefix.
+
+Examples:
+--------------------------------
+# List configured endpoints and their IDs
+$ ./aio-migrate.py --list
+
+# List Smart Folders from endpoint 2 (SWP DE-1)
+$ ./aio-migrate.py --folders 2
+
+# Migrate Computer Groups from endpoint 1 (SWP US-1) to endpoint 2 (SWP DE-1)
+$ ./aio-migrate.py --groups 1 --destination 2
+
+# Migrate Scheduled Tasks from endpoint 1 (SWP US-1) to endpoint 2 (SWP DE-1)
+$ ./aio-migrate.py --scheduled-tasks 1 --destination 2
+```
+
+## How to Migrate from SWP to SWP
+
+Migrating Vision One Server & Workload Protection to another instance of Vision One Server & Workload Protection:
+
+1. Create Computer Group structure in SWP: `./aio-migrate.py --groups 2 --destination 1`
+2. Create Smart Folder structure in SWP: `./aio-migrate.py --folders 2 --destination 1`
+3. Export required policies starting with the relevant root policy using `Export --> Export Selected to XML (For Import)...` in the source SWP.
+4. Import the `.xml` file to the destination SWP.
+5. ***TODO:*** Reactivate the Agents to the destination SWP.
+6. Merge the Scheduled Tasks: `./aio-migrate.py --scheduled-tasks 2 --destination 1`
+7. Merge the Event-based Tasks: `./aio-migrate.py --event-based-tasks 2 --destination 1`
+
+> ***Notes:***
+> - Contacts with the predefined role of 'Auditor' are automatically created if they do not exist in the target environment.
+> - Administrators will not be migrated since the API-Key of SWP does not have the necessary permissions to create Administrators.
 
 ## How the Scripts Support the Migration Workflow
 
 Migrating Deep Security to Vision One Server & Workload Protection:
 
-1. Create Computer Group structure in SWP: `groups-and-folders.py --mergegroups ds`
-2. Create Smart Folder structure in SWP: `groups-and-folders.py --mergefolders ds`
+1. Create Computer Group structure in SWP: `./aio-migrate.py --groups 2 --destination 1`
+2. Create Smart Folder structure in SWP: `./aio-migrate.py --folders 2 --destination 1`
 3. Migrate the Common Objects, Policies, and Computers with the official Migration Tool
    1. The migrated policies will get a suffix generated (e.g. ` (2024-11-14T16:26:36Z 10.0.0.84)`). Use this suffix as the `--policysuffix` for `scheduled-tasks.py` in the next step.
-4. Merge the Scheduled Tasks: `scheduled-tasks.py --mergetasks ds --policysuffix " (2024-11-14T16:26:36Z 10.0.0.84)"`
+4. Merge the Scheduled Tasks: `./aio-migrate.py --scheduled-tasks 2 --destination 1 --policysuffix " (2024-11-14T16:26:36Z 10.0.0.84)"`
+4. Merge the Event-based Tasks: `./aio-migrate.py --event-based-tasks 2 --destination 1 --policysuffix " (2024-11-14T16:26:36Z 10.0.0.84)"`
 
 > ***Notes:***
-> 
-> TODO: Contacts are automatically created if not existent and they have a valid email address.
-> 
-> Administrators will not be migrated since the API-Key of SWP does not have the necessary permissions to create Administrators.
+> - Contacts with the predefined role of 'Auditor' are automatically created if they do not exist in the target environment.
+> - Administrators will not be migrated since the API-Key of SWP does not have the necessary permissions to create Administrators.
 
-## Preparation of the Scripts
+## Deprecatd:
+
+Chapter only relevant for `groups-and-folders` and `scheduled-tasks`.
+
+### Preparation of the Scripts
 
 - Set environment variable `API_KEY_SWP` with the API key of the
   Server & Workload Security instance to use.
@@ -58,7 +169,7 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Groups and Folders
+### Groups and Folders
 
 The Python script `groups-and-folders.py` implements for following functionality:
 
@@ -90,7 +201,7 @@ $ ./groups-and-folders.py --mergegroups ds
 $ ./groups-and-folders.py --listfolders swp
 ```
 
-## Scheduled Tasks (ALPHA)
+### Scheduled Tasks
 
 The Python script `scheduled-tasks.py` implements for following functionality:
 

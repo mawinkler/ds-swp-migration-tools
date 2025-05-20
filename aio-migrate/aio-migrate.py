@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 
 import requests
 import urllib3
+import yaml
 from typeguard import typechecked
 
 # Comment out if DS is using a trusted certificate
@@ -17,41 +18,50 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 DOCUMENTATION = """
 ---
-module: scheduled-tasks.py
+module: aio-migrate.py
 
 short_description: Implements for following functionality:
-    - List Scheduled Tasks in DS and SWP
-    - Merge Scheduled Tasks from DS with SWP and vice versa
+    - List Computer Groups in DS and SWP
+    - List Smart Folders in DS and SWP
+    - Merge Computer Group structure from DS with SWP and vice versa
+    - Merge Smart Folders structure from DS with SWP and vice versa
 
 description:
     - Using REST APIs of DS and SWP
 
 requirements:
-    - Set environment variable API_KEY_SWP with the API key of the
-      Server & Workload Security instance to use.
-    - Set environment variable API_KEY_DS with the API key of the
-      Deep Security instance to use.
-    - Adapt the constants in between
-      # HERE
-      and
-      # /HERE
-      to your requirements
+    - See READNE.md
 
 options:
-  -h, --help           show this help message and exit
-  --listtasks TYPE     list scheduled tasks (TYPE=ds|swp)
-  --mergetasks TYPE    merge scheduled tasks from given source (TYPE=ds|swp)
+  -h, --help            show this help message and exit
+  --list                List configured endpoints
+  --groups              List or manage computer groups
+  --folders             List or manage smart folders
+  --scheduled-tasks     List or manage scheduled tasks
+  --event-based-tasks   List or manage event-based tasks
+  --destination [DESTINATION-ID]
+                        Destination Id
+  --policysuffix POLICYSUFFIX
+                        Optional policy name suffix.
+  --taskprefix TASKPREFIX
+                        Optional task name prefix.
 
 author:
     - Markus Winkler (markus_winkler@trendmicro.com)
 """
 
 EXAMPLES = """
-# Merge Scheduled Tasks from DS to SWP
-$ ./scheduled-tasks.py --mergegroups ds
+# List configured endpoints and their IDs
+$ ./aio-migrate.py --list
 
-# List Scheduled Tasks in SWP
-$ ./scheduled-tasks.py --listfolders swp
+# List Smart Folders from endpoint 2 (SWP DE-1)
+$ ./aio-migrate.py --folders 2
+
+# Migrate Computer Groups from endpoint 1 (SWP US-1) to endpoint 2 (SWP DE-1)
+$ ./aio-migrate.py --groups 1 --destination 2
+
+# Migrate Scheduled Tasks from endpoint 1 (SWP US-1) to endpoint 2 (SWP DE-1)
+$ ./aio-migrate.py --scheduled-tasks 1 --destination 2
 """
 
 RETURN = """
@@ -69,22 +79,9 @@ logging.basicConfig(
 logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-# HERE
-REGION_SWP = "us-1"  # Examples: de-1 sg-1
-API_BASE_URL_DS = f"https://3.120.149.217:4119/api/"
-# /HERE
-
-# Do not change
-ENDPOINT_SWP = "swp"
-ENDPOINT_DS = "ds"
-API_KEY_SWP = os.environ["API_KEY_SWP"]
-if REGION_SWP == "":
-    API_BASE_URL_SWP = "/workload.us-1.cloudone.trendmicro.com/api/"
-else:
-    API_BASE_URL_SWP = f"https://workload.{REGION_SWP}.cloudone.trendmicro.com/api/"
-API_KEY_DS = os.environ["API_KEY_DS"]
+ENDPOINT_TYPE_SWP = "swp"
+ENDPOINT_TYPE_DS = "ds"
 REQUESTS_TIMEOUTS = (2, 30)
-# /Do not change
 
 
 # #############################################################################
@@ -128,34 +125,54 @@ class Connector:
         self._computers = None
         self._policies = None
         self._computergroups = None
+        self._relaygroups = None
         self._smartfolders = None
         self._reporttemplates = None
         self._administrators = None
         self._contacts = None
         self._roles = None
 
+        self._id = endpoint.get("id")
+        self._type = endpoint.get("type")
+        self._api_key = endpoint.get("api_key")
+        self._url = endpoint.get("url")
+
         # SWP / DS
-        if endpoint == ENDPOINT_SWP:
-            self._url = f"{API_BASE_URL_SWP}"
+        if endpoint.get("type") == ENDPOINT_TYPE_SWP:
             self._headers = {
                 "Content-type": "application/json",
-                "api-secret-key": API_KEY_SWP,
+                "api-secret-key": self._api_key,
                 "api-version": "v1",
             }
             self._verify = True
 
-        elif endpoint == ENDPOINT_DS:
-            self._url = f"{API_BASE_URL_DS}"
+        elif endpoint.get("type") == ENDPOINT_TYPE_DS:
             self._headers = {
                 "Content-type": "application/json",
                 "Accept": "application/json",
-                "api-secret-key": API_KEY_DS,
+                "api-secret-key": self._api_key,
                 "api-version": "v1",
             }
             self._verify = False
 
         else:
             raise ValueError(f"Invalid endpoint: {endpoint}")
+
+    @property
+    def url(self):
+        return self._url
+
+    @property
+    def type(self):
+        return self._type
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def api_key(self):
+        return self._api_key
 
     def get(self, endpoint) -> Any:
         """Send an HTTP GET request and check response for errors.
@@ -281,7 +298,10 @@ class Connector:
                 break
 
             for item in response[key]:
-                paged[item.get("ID")] = item
+                # Filter out groups from cloud providers
+                # TODO: validate checks
+                if item.get("cloudType") is None and item.get("type") != "aws-account":
+                    paged[item.get("ID")] = item
 
             id_value = response[key][-1]["ID"]
 
@@ -291,6 +311,64 @@ class Connector:
             total_num = total_num + num_found
 
         return paged
+
+    @typechecked
+    def get_by_name(self, endpoint, key, name, parent_id=None) -> int:
+        """Retrieve all"""
+
+        # We limit to more than one to detect duplicates by name
+        max_items = 2
+
+        if parent_id is None:
+            payload = {
+                "maxItems": max_items,
+                "searchCriteria": [
+                    {
+                        "fieldName": "name",
+                        "stringTest": "equal",
+                        "stringValue": name,
+                    }
+                ],
+                "sortByObjectID": "true",
+            }
+        else:
+            if key == "computerGroups":
+                parent_field = "parentGroupID"
+            elif key == "smartFolders":
+                parent_field = "parentSmartFolderID"
+            else:
+                raise ValueError(f"Invalid key: {key}")
+
+            payload = {
+                "maxItems": max_items,
+                "searchCriteria": [
+                    {
+                        "fieldName": "name",
+                        "stringTest": "equal",
+                        "stringValue": name,
+                    },
+                    {
+                        "fieldName": parent_field,
+                        "numericTest": "equal",
+                        "numericValue": parent_id,
+                    },
+                ],
+                "sortByObjectID": "true",
+            }
+
+        response = self.post(endpoint + "/search", data=payload)
+
+        cnt = len(response[key])
+        if cnt == 1:
+            item = response[key][0]
+            if item.get("ID") is not None:
+                return item.get("ID")
+        elif cnt > 1:
+            _LOGGER.warning(f"More than one group or folder where returned. Count {len(response[key])}")
+            # endpoint_groups = self.get_paged(endpoint, key)
+
+        else:
+            raise ValueError(f"Group or folder named {name} not found.")
 
     @property
     def computers(self, id=None) -> Dict:
@@ -309,6 +387,12 @@ class Connector:
         if self._computergroups is None:
             self._computergroups = self.get_paged("computergroups", "computerGroups")
         return self._computergroups
+
+    @property
+    def relaygroups(self, id=None) -> Dict:
+        if self._relaygroups is None:
+            self._relaygroups = self.get_paged("relaygroups", "relayGroups")
+        return self._relaygroups
 
     @property
     def smartfolders(self, id=None) -> Dict:
@@ -340,130 +424,6 @@ class Connector:
             self._roles = self.get_paged("roles", "roles")
         return self._roles
 
-    @typechecked
-    def get_by_name(self, endpoint, key, name) -> int:
-        """Retrieve by name"""
-
-        # We limit to more than one to detect duplicates by name
-        max_items = 2
-
-        payload = {
-            "maxItems": max_items,
-            "searchCriteria": [
-                {
-                    "fieldName": "name",
-                    "stringTest": "equal",
-                    "stringValue": name,
-                }
-            ],
-            "sortByObjectID": "true",
-        }
-
-        response = self.post(endpoint + "/search", data=payload)
-
-        cnt = len(response[key])
-        if cnt == 1:
-            item = response[key][0]
-            if item.get("ID") is not None:
-                return item.get("ID")
-        elif cnt > 1:
-            _LOGGER.warning(f"More than one scheduled tasks where returned. Count {len(response[key])}")
-            # endpoint_groups = self.get_paged(endpoint, key)
-
-        else:
-            raise ValueError(f"Scheduled Task named {name} not found.")
-
-    # @typechecked
-    # def get_group_by_name_and_parent(self, endpoint, key, name, parent_id) -> int:
-    #     """Retrieve all"""
-
-    #     # We limit to more than one to detect duplicates by name
-    #     max_items = 2
-
-    #     if parent_id is None:
-    #         payload = {
-    #             "maxItems": max_items,
-    #             "searchCriteria": [
-    #                 {
-    #                     "fieldName": "name",
-    #                     "stringTest": "equal",
-    #                     "stringValue": name,
-    #                 }
-    #             ],
-    #             "sortByObjectID": "true",
-    #         }
-    #     else:
-    #         if key == "computerGroups":
-    #             parent_field = "parentGroupID"
-    #         elif key == "smartFolders":
-    #             parent_field = "parentSmartFolderID"
-    #         else:
-    #             raise ValueError(f"Invalid key: {key}")
-
-    #         payload = {
-    #             "maxItems": max_items,
-    #             "searchCriteria": [
-    #                 {
-    #                     "fieldName": "name",
-    #                     "stringTest": "equal",
-    #                     "stringValue": name,
-    #                 },
-    #                 {
-    #                     "fieldName": parent_field,
-    #                     "numericTest": "equal",
-    #                     "numericValue": parent_id,
-    #                 },
-    #             ],
-    #             "sortByObjectID": "true",
-    #         }
-
-    #     response = self.post(endpoint + "/search", data=payload)
-
-    #     cnt = len(response[key])
-    #     if cnt == 1:
-    #         item = response[key][0]
-    #         if item.get("ID") is not None:
-    #             return item.get("ID")
-    #     elif cnt > 1:
-    #         _LOGGER.warning(f"More than one group or folder where returned. Count {len(response[key])}")
-    #         # endpoint_groups = self.get_paged(endpoint, key)
-
-    #     else:
-    #         raise ValueError(f"Group or folder named {name} not found.")
-
-    # @typechecked
-    # def get_by_field(self, endpoint, key, field, name) -> int:
-    #     """Retrieve by name"""
-
-    #     # We limit to more than one to detect duplicates by name
-    #     max_items = 2
-
-    #     payload = {
-    #         "maxItems": max_items,
-    #         "searchCriteria": [
-    #             {
-    #                 "fieldName": field,
-    #                 "stringTest": "equal",
-    #                 "stringValue": name,
-    #             }
-    #         ],
-    #         "sortByObjectID": "true",
-    #     }
-
-    #     response = self.post(endpoint + "/search", data=payload)
-
-    #     cnt = len(response[key])
-    #     if cnt == 1:
-    #         item = response[key][0]
-    #         if item.get("ID") is not None:
-    #             return item.get("ID")
-    #     elif cnt > 1:
-    #         _LOGGER.warning(f"More than one scheduled tasks where returned. Count {len(response[key])}")
-    #         # endpoint_groups = self.get_paged(endpoint, key)
-
-    #     else:
-    #         raise ValueError(f"Scheduled Task named {name} not found.")
-
     @staticmethod
     def _check_error(response: requests.Response) -> None:
         """Check response for Errors.
@@ -477,7 +437,7 @@ class Connector:
                 case 400:
                     tre = TrendRequestError("400 Bad request")
                     tre.message = json.loads(response.content.decode("utf-8")).get("message")
-                    # _LOGGER.error(f"{tre.message}")
+                    _LOGGER.error(f"{tre.message}")
                     raise tre
                 case 401:
                     raise TrendRequestAuthorizationError(
@@ -503,18 +463,41 @@ class Connector:
 # List
 # #############################################################################
 @typechecked
-def list_scheduled_tasks(product, key="scheduledTasks") -> Dict:
+def list_groups(connector) -> Dict:
+    """List Computer Groups."""
+
+    endpoint = "computergroups"
+
+    return connector.get_paged(endpoint=endpoint, key="computerGroups")
+
+
+@typechecked
+def list_folders(connector) -> Dict:
+    """List Smart Folders."""
+
+    endpoint = "smartfolders"
+
+    return connector.get_paged(endpoint=endpoint, key="smartFolders")
+
+
+@typechecked
+def list_scheduled_tasks(connector, key="scheduledTasks") -> Dict:
     """List Scheduled Tasks."""
 
     endpoint = "scheduledtasks"
-    if product == ENDPOINT_SWP:
-        response = connector_swp.get_paged(endpoint=endpoint, key=key)
 
-    elif product == ENDPOINT_DS:
-        response = connector_ds.get_paged(endpoint=endpoint, key=key)
+    response = connector.get_paged(endpoint=endpoint, key=key)
 
-    else:
-        raise ValueError(f"Invalid endpoint: {product}")
+    return response
+
+
+@typechecked
+def list_event_based_tasks(connector, key="eventBasedTasks") -> Dict:
+    """List Event Based Tasks."""
+
+    endpoint = "eventbasedtasks"
+
+    response = connector.get_paged(endpoint=endpoint, key=key)
 
     return response
 
@@ -523,17 +506,69 @@ def list_scheduled_tasks(product, key="scheduledTasks") -> Dict:
 # Add
 # #############################################################################
 @typechecked
-def add_scheduled_task(target, data) -> int:
+def add_group(connector, data) -> int:
+    """Add Computer Group."""
+
+    endpoint = "computergroups"
+
+    data.pop("ID")
+    try:
+        response = connector.post(endpoint=endpoint, data=data)
+    except TrendRequestError as tre:
+        if "already exists" in tre.message:
+            id = connector.get_by_name(
+                endpoint=endpoint, key="computerGroups", name=data.get("name"), parent_id=data.get("parentGroupID")
+            )
+            _LOGGER.debug(f"Group with name: {data.get('name')} already exists with id: {id}")
+            return id
+        else:
+            raise tre
+
+    return response.get("ID")
+
+
+@typechecked
+def add_folder(connector, data) -> int:
+    """Add Smart Folder."""
+
+    endpoint = "smartfolders"
+
+    data.pop("ID")
+    try:
+        response = connector.post(endpoint=endpoint, data=data)
+    except TrendRequestError as tre:
+        if "already exists" in tre.message:
+            id = connector.get_by_name(
+                endpoint=endpoint,
+                key="smartFolders",
+                name=data.get("name"),
+                parent_id=data.get("parentSmartFolderID"),
+            )
+            _LOGGER.debug(f"Smart Folder with name: {data.get('name')} already exists with id: {id}")
+            return id
+        else:
+            raise tre
+
+    return response.get("ID")
+
+
+@typechecked
+def add_scheduled_task(connector, data) -> int:
     """Add Scheduled Task."""
 
     endpoint = "scheduledtasks"
 
+    task_type = data.get("type", None)
+    if connector.type == ENDPOINT_TYPE_SWP and task_type is not None and task_type == "check-for-software-updates":
+        _LOGGER.info(f"Scheduled task: Task type {task_type} not supported in Server & Workload Protection. Skipping.")
+        return None
+
     data.pop("ID")
     try:
-        response = target.post(endpoint=endpoint, data=data)
+        response = connector.post(endpoint=endpoint, data=data)
     except TrendRequestError as tre:
         if "already exists" in tre.message:
-            id = target.get_by_name(endpoint=endpoint, key="scheduledTasks", name=data.get("name"))
+            id = connector.get_by_name(endpoint=endpoint, key="scheduledTasks", name=data.get("name"))
             _LOGGER.info(f"Scheduled task with name: {data.get('name')} already exists with id: {id}")
             return id
         else:
@@ -543,24 +578,43 @@ def add_scheduled_task(target, data) -> int:
 
 
 @typechecked
-def add_contact(target, data) -> int:
+def add_event_based_task(connector, data) -> int:
+    """Add Event Based Task."""
+
+    endpoint = "eventbasedtasks"
+
+    data.pop("ID")
+    try:
+        response = connector.post(endpoint=endpoint, data=data)
+    except TrendRequestError as tre:
+        if "must be unique" in tre.message:
+            id = connector.get_by_name(endpoint=endpoint, key="eventBasedTasks", name=data.get("name"))
+            _LOGGER.info(f"Event Based task with name: {data.get('name')} already exists with id: {id}")
+            return id
+        else:
+            raise tre
+
+    return response.get("ID")
+
+
+@typechecked
+def add_contact(connector, data) -> int:
     """Add Contact."""
 
     endpoint = "contacts"
 
     data.pop("ID")
-
     # Get roleID for Auditor in target environment
-    for role in target.roles.values():
+    for role in connector.roles.values():
         if role.get("v1RoleName") == "Auditor":
             data["roleID"] = role.get("ID")
             break
 
     try:
-        response = target.post(endpoint=endpoint, data=data)
+        response = connector.post(endpoint=endpoint, data=data)
     except TrendRequestError as tre:
         if "already exists" in tre.message:
-            id = target.get_by_name(endpoint=endpoint, key="contacts", name=data.get("name"))
+            id = connector.get_by_name(endpoint=endpoint, key="contacts", name=data.get("name"))
             _LOGGER.info(f"Contact with name: {data.get('name')} already exists with id: {id}")
             return id
         else:
@@ -572,28 +626,75 @@ def add_contact(target, data) -> int:
 # #############################################################################
 # Merge
 # #############################################################################
-def merge_scheduled_tasks(product, data, taskprefix="", policysuffix="") -> None:
+def merge_groups(connector, data) -> None:
+    """Unidirectional merge Computer Groups"""
+
+    tree = {}
+    remaining = []
+
+    for item in data.values():
+        if item.get("parentGroupID") is None:
+            local_id = item.get("ID")
+            _LOGGER.info(f"Adding root group {local_id}")
+            item["name"] = f"{item['name']}"
+            tree[local_id] = add_group(connector, item)
+
+        elif item.get("parentGroupID") in tree:
+            local_id = item.get("ID")
+            parent_id = tree.get(item.get("parentGroupID"))
+            _LOGGER.info(f"Adding child group {local_id} to {parent_id}")
+            item["parentGroupID"] = parent_id
+            item["name"] = f"{item['name']}"
+            tree[local_id] = add_group(connector, item)
+
+        else:
+            remaining.append(item)
+
+    _LOGGER.debug(f"Group mapping: {tree}")
+    if len(remaining) > 0:
+        _LOGGER.warning(f"{len(remaining)} groups to create")
+
+
+def merge_folders(connector, data) -> None:
+    """Unidirectional merge Computer Groups"""
+
+    tree = {}
+    remaining = []
+
+    for item in data.values():
+        if item.get("parentSmartFolderID") is None:
+            local_id = item.get("ID")
+            _LOGGER.info(f"Adding root folder {local_id}")
+            item["name"] = f"{item['name']}"
+            tree[local_id] = add_folder(connector, item)
+
+        elif item.get("parentSmartFolderID") in tree:
+            local_id = item.get("ID")
+            parent_id = tree.get(item.get("parentSmartFolderID"))
+            _LOGGER.info(f"Adding child folder {local_id} to {parent_id}")
+            item["parentSmartFolderID"] = parent_id
+            item["name"] = f"{item['name']}"
+            tree[local_id] = add_folder(connector, item)
+
+        else:
+            remaining.append(item)
+
+    _LOGGER.debug(f"Folder mapping: {tree}")
+    if len(remaining) > 0:
+        _LOGGER.warning(f"{len(remaining)} folders to create")
+
+
+def merge_scheduled_tasks(source, target, data, taskprefix="", policysuffix="") -> None:
     """Unidirectional merge Scheduled Tasks"""
 
     merged = []
     remaining = list(data.keys())
 
-    if product == ENDPOINT_SWP:
-        source = connector_swp
-        target = connector_ds  # ENDPOINT_DS
-
-    elif product == ENDPOINT_DS:
-        source = connector_ds
-        target = connector_swp  # ENDPOINT_SWP
-
-    else:
-        raise ValueError(f"Invalid endpoint: {product}")
-
     _LOGGER.debug(f"Task prefix: {taskprefix}, Policy suffix: {policysuffix}")
     for item in data.values():
         source_taskID = item.get("ID")
         _LOGGER.info(f"Processing Scheduled Task: {item.get('name')} with ID: {source_taskID}")
-        item["name"] = f"{taskprefix} {item['name']}"
+        item["name"] = f"{taskprefix}{item['name']}"
 
         try:
             if "checkForSecurityUpdatesTaskParameters" in item:
@@ -664,7 +765,8 @@ def merge_scheduled_tasks(product, data, taskprefix="", policysuffix="") -> None
             _LOGGER.info(f"Adding Scheduled Task: {item.get('name')}")
             target_taskID = add_scheduled_task(target, item)
 
-            merged.append(target_taskID)
+            if target_taskID is not None:
+                merged.append(target_taskID)
             remaining.remove(source_taskID)
         except ValueError as ve:
             _LOGGER.error(ve)
@@ -675,18 +777,68 @@ def merge_scheduled_tasks(product, data, taskprefix="", policysuffix="") -> None
         _LOGGER.warning(f"{len(remaining)} Scheduled Tasks to create")
 
 
+def merge_event_based_tasks(source, target, data, taskprefix="", policysuffix="") -> None:
+    """Unidirectional merge Event Based Tasks"""
+
+    merged = []
+    remaining = list(data.keys())
+
+    _LOGGER.debug(f"Task prefix: {taskprefix}, Policy suffix: {policysuffix}")
+    for item in data.values():
+        source_taskID = item.get("ID")
+        _LOGGER.info(f"Processing Event Based Task: {item.get('name')} with ID: {source_taskID}")
+        item["name"] = f"{taskprefix}{item['name']}"
+        target_actions = []
+        target_conditions = []
+        try:
+            actions = item.get("actions", [])
+            for action in actions:
+                if action.get("type") == "assign-policy":
+                    if action.get("parameterValue") is not None:
+                        data = {"policyID": action.get("parameterValue")}
+                        action["parameterValue"] = map_computerFilter(source, target, data, policysuffix).get(
+                            "policyID"
+                        )
+                if action.get("type") == "assign-relay":
+                    _LOGGER.warning("Mapping of Relay Groups is not supported. Removing action.")
+                    action["parameterValue"] = None
+                if action.get("type") == "assign-group":
+                    if action.get("parameterValue") is not None:
+                        data = {"computerGroupID": action.get("parameterValue")}
+                        action["parameterValue"] = map_computerFilter(source, target, data, policysuffix).get(
+                            "computerGroupID"
+                        )
+                # if action.get("type") == "activate":
+                # if action.get("type") == "deactivate":
+                target_actions.append(action)
+
+            conditions = item.get("conditions", [])
+            for condition in conditions:
+                _LOGGER.info(f"Processing Event Based Task Condition: {item.get('name')}: {condition}")
+                target_conditions.append(condition)
+
+            item["actions"] = target_actions
+            item["conditions"] = target_conditions
+
+            _LOGGER.info(f"Adding Event Based Task: {item.get('name')}")
+            target_taskID = add_event_based_task(target, item)
+
+            merged.append(target_taskID)
+            remaining.remove(source_taskID)
+        except ValueError as ve:
+            _LOGGER.error(ve)
+
+    _LOGGER.debug(f"Merged: {merged}")
+    _LOGGER.debug(f"Remaining: {remaining}")
+    if len(remaining) > 0:
+        _LOGGER.warning(f"{len(remaining)} Event Based Tasks to create")
+
+
 # #############################################################################
 # Mappers
 # #############################################################################
 @typechecked
 def map_computerFilter(source, target, data, policysuffix="") -> Dict:
-    # "computerFilter": {
-    #     "type": "computer",
-    #     "computerID": 0,
-    #     "computerGroupID": 0,
-    #     "policyID": 0,
-    #     "smartFolderID": 0
-    #     }
 
     params = {}
 
@@ -728,7 +880,6 @@ def map_computerFilter(source, target, data, policysuffix="") -> Dict:
 
 @typechecked
 def map_computerGroup(source, target, data) -> Dict:
-    # "computerGroupID": 0,
 
     params = {}
 
@@ -747,15 +898,6 @@ def map_computerGroup(source, target, data) -> Dict:
 
 @typechecked
 def map_recipients(source, target, data) -> Dict:
-    # "recipients": {
-    #     "allAdministratorsAndContacts": true,
-    #     "administratorIDs": [
-    #         0
-    #     ],
-    #     "contactIDs": [
-    #         0
-    #     ]
-    # },
 
     params = {}
 
@@ -784,6 +926,7 @@ def map_recipients(source, target, data) -> Dict:
 
 @typechecked
 def map_computerFilter_computerID(source, target, data) -> int | None:
+
     computerID = None
 
     # Map the computerID based on biosUUID
@@ -802,6 +945,7 @@ def map_computerFilter_computerID(source, target, data) -> int | None:
 
 @typechecked
 def map_computerFilter_computerGroupID(source, target, data) -> int | None:
+    
     computerGroupID = None
 
     source_groupName = source.computergroups[data.get("computerGroupID")].get("name")
@@ -832,6 +976,7 @@ def map_computerFilter_computerGroupID(source, target, data) -> int | None:
 
 @typechecked
 def map_computerFilter_policyID(source, target, data, policysuffix="") -> int | None:
+    
     policyID = None
 
     source_policyName = source.policies[data.get("policyID")].get("name")
@@ -863,7 +1008,15 @@ def map_computerFilter_policyID(source, target, data, policysuffix="") -> int | 
 
 
 @typechecked
+def map_computerFilter_relayGroupID(source, target, data, policysuffix="") -> int | None:
+    """Not supported"""
+    
+    return 0
+
+
+@typechecked
 def map_computerFilter_smartFolderID(source, target, data) -> int | None:
+    
     smartFolderID = None
 
     source_smartFolderName = source.smartfolders[data.get("smartFolderID")].get("name")
@@ -897,6 +1050,7 @@ def map_computerFilter_smartFolderID(source, target, data) -> int | None:
 
 @typechecked
 def map_recipients_administratorIDs(source, target, data) -> List | None:
+    
     administratorIDs = None
 
     _LOGGER.warning(f"Unable to match Administrators, ignored: {data.get('administratorIDs')}")
@@ -920,6 +1074,7 @@ def map_recipients_administratorIDs(source, target, data) -> List | None:
 
 @typechecked
 def map_recipients_contactIDs(source, target, data) -> List | None:
+    
     contactIDs = None
 
     for id in data.get("contactIDs"):
@@ -947,52 +1102,117 @@ def map_recipients_contactIDs(source, target, data) -> List | None:
 # Main
 # #############################################################################
 # Connectors
-connector_ds = Connector(ENDPOINT_DS)
-connector_swp = Connector(ENDPOINT_SWP)
+connectors = []
+if os.path.isfile("config.yaml"):
+    with open("config.yaml", "r", encoding="utf-8") as ymlfile:
+        cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
+else:
+    cfg = None
+
+for idx, endpoint in enumerate(cfg.get("endpoints")):
+    endpoint["id"] = idx
+    connectors.append(Connector(endpoint))
+
+_LOGGER.info(f"Connectors initialized: {len(connectors)}")
 
 
 def main() -> None:
     """Entry point."""
 
     parser = argparse.ArgumentParser(
-        prog="python3 scheduled-tasks.py",
+        prog="python3 aio-migrate.py",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description="List and merge Scheduled Tasks in between DS and SWP",
+        description="List and migrate objects in between DS and SWP",
         epilog=textwrap.dedent(
             """\
             Examples:
             --------------------------------
-            # Merge Scheduled Tasks from DS with SWP
-            $ ./scheduled-tasks.py --mergetasks ds --policysuffix " (2024-11-14T16:26:36Z 10.0.0.84)" --taskprefix "DS"
+            # List configured endpoints
+            $ ./aio-migrate.py --list
 
-            # List Scheduled Tasks in SWP
-            $ ./scheduled-tasks.py --listtasks swp
+            # List Smart Folders from endpoint 2
+            $ ./aio-migrate.py --folders 2
+            
+            # Migrate Computer Groups from endpoint 1 to endpoint 2
+            $ ./aio-migrate.py --groups 1 --destination 2
+
+            # Migrate Scheduled Tasks from endpoint 1 to endpoint 2
+            $ ./aio-migrate.py --scheduled-tasks 1 --destination 2
             """
         ),
     )
-    parser.add_argument("--listtasks", type=str, nargs=1, metavar="TYPE", help="list scheduled tasks (TYPE=ds|swp)")
+
+    parser.add_argument("--list", action=argparse.BooleanOptionalAction, help="List configured endpoints")
+    parser.add_argument("--groups", action=argparse.BooleanOptionalAction, help="List or manage computer groups")
+    parser.add_argument("--folders", action=argparse.BooleanOptionalAction, help="List or manage smart folders")
     parser.add_argument(
-        "--mergetasks", type=str, nargs=1, metavar="TYPE", help="merge scheduled tasks from given source (TYPE=ds|swp)"
+        "--scheduled-tasks", action=argparse.BooleanOptionalAction, help="List or manage scheduled tasks"
     )
+    parser.add_argument(
+        "--event-based-tasks", action=argparse.BooleanOptionalAction, help="List or manage event-based tasks"
+    )
+
+    parser.add_argument("source", type=int, nargs="?", metavar="SOURCE-ID", help="Source Id")
+    parser.add_argument("--destination", type=int, nargs="?", metavar="DESTINATION-ID", help="Destination Id")
+
     parser.add_argument("--policysuffix", type=str, default="", help="Optional policy name suffix.")
     parser.add_argument("--taskprefix", type=str, default="", help="Optional task name prefix.")
 
     args = parser.parse_args()
 
-    # pp(connector_ds.computers)
-    # pp(connector_swp.smartfolders)
-    # pp(connector_ds.administrators)  # only DS
-    # pp(connector_swp.contacts)
-    # pp(connector_swp.roles)
+    if args.list:
+        for connector in connectors:
+            print(
+                f"ID: {connector.id + 1}: Type: {connector.type}, Url: {connector.url}, API Key: {connector.api_key[-8:]}"
+            )
 
-    if args.listtasks:
-        tasks = list_scheduled_tasks(args.listtasks[0].lower())
-        for task in tasks.values():
-            pp(task)
+    if args.groups:
+        if args.destination is None:
+            groups = list_groups(connectors[args.source - 1])
+            for group in groups.values():
+                pp(group)
+        else:
+            groups = list_groups(connectors[args.source - 1])
+            merge_groups(connectors[args.destination - 1], groups)
 
-    if args.mergetasks:
-        tasks = list_scheduled_tasks(args.mergetasks[0].lower())
-        merge_scheduled_tasks(args.mergetasks[0].lower(), tasks, args.taskprefix, args.policysuffix)
+    if args.folders:
+        if args.destination is None:
+            folders = list_folders(connectors[args.source - 1])
+            for folders in folders.values():
+                pp(folders)
+        else:
+            folders = list_folders(connectors[args.source - 1])
+            merge_folders(connectors[args.destination - 1], folders)
+
+    if args.scheduled_tasks:
+        if args.destination is None:
+            scheduled_tasks = list_scheduled_tasks(connectors[args.source - 1])
+            for group in scheduled_tasks.values():
+                pp(group)
+        else:
+            scheduled_tasks = list_scheduled_tasks(connectors[args.source - 1])
+            merge_scheduled_tasks(
+                connectors[args.source - 1],
+                connectors[args.destination - 1],
+                scheduled_tasks,
+                args.taskprefix,
+                args.policysuffix,
+            )
+
+    if args.event_based_tasks:
+        if args.destination is None:
+            event_based_tasks = list_event_based_tasks(connectors[args.source - 1])
+            for group in event_based_tasks.values():
+                pp(group)
+        else:
+            event_based_tasks = list_event_based_tasks(connectors[args.source - 1])
+            merge_event_based_tasks(
+                connectors[args.source - 1],
+                connectors[args.destination - 1],
+                event_based_tasks,
+                args.taskprefix,
+                args.policysuffix,
+            )
 
 
 if __name__ == "__main__":

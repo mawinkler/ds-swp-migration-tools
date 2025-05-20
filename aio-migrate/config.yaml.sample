@@ -1,0 +1,10 @@
+endpoints:
+  - type: swp
+    url: https://workload.us-1.cloudone.trendmicro.com/api/
+    api_key: SWP API KEY
+  - type: swp
+    url: https://workload.de-1.cloudone.trendmicro.com/api/
+    api_key: SWP API KEY
+  - type: ds
+    url: https://3.120.149.217:4119/api/
+    api_key: DS API KEY
