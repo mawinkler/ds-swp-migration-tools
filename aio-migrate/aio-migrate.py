@@ -778,6 +778,20 @@ def merge_scheduled_tasks(source, target, data, taskprefix="", policysuffix="") 
                     item.get("updateSuspiciousObjectsListTaskParameters").get("computerFilter"),
                     policysuffix,
                 )
+            if "scheduledAgentUpgradeTaskParameters" in item:
+                item["scheduledAgentUpgradeTaskParameters"]["computerFilter"] = map_computerFilter(
+                    source,
+                    target,
+                    item.get("scheduledAgentUpgradeTaskParameters").get("computerFilter"),
+                    policysuffix,
+                )
+            if "installV1AgentParameters" in item:
+                item["installV1AgentParameters"]["computerFilter"] = map_computerFilter(
+                    source,
+                    target,
+                    item.get("installV1AgentParameters").get("computerFilter"),
+                    policysuffix,
+                )
 
             _LOGGER.info(f"Adding Scheduled Task: {item.get('name')}")
             target_taskID = add_scheduled_task(target, item)
