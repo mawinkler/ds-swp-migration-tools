@@ -655,18 +655,35 @@ def merge_groups(connector, data) -> None:
         _LOGGER.warning(f"{len(remaining)} groups to create")
 
 
-def merge_folders(connector, data) -> None:
+def merge_folders(source, target, data, taskprefix="", policysuffix="") -> None:
     """Unidirectional merge Computer Groups"""
 
     tree = {}
     remaining = []
 
     for item in data.values():
+        rule_groups = item.get("ruleGroups")
+        if rule_groups is not None:
+            rule_groups_migrated = []
+            for rule_group in rule_groups:
+                rules_migrated = []
+                rules = rule_group.get("rules")
+                if rules is not None:
+                    for rule in rules:
+                        if rule.get("key") == "general-policy":
+                            data = {"policyID": int(rule.get("value"))}
+                            rule["value"] = str(map_computerFilter(source, target, data, policysuffix).get("policyID"))
+                        rules_migrated.append(rule)
+                rule_group["rules"] = rules_migrated
+
+                rule_groups_migrated.append(rule_group)
+        item["ruleGroups"] = rule_groups_migrated
+
         if item.get("parentSmartFolderID") is None:
             local_id = item.get("ID")
             _LOGGER.info(f"Adding root folder {local_id}")
             item["name"] = f"{item['name']}"
-            tree[local_id] = add_folder(connector, item)
+            tree[local_id] = add_folder(target, item)
 
         elif item.get("parentSmartFolderID") in tree:
             local_id = item.get("ID")
@@ -674,7 +691,7 @@ def merge_folders(connector, data) -> None:
             _LOGGER.info(f"Adding child folder {local_id} to {parent_id}")
             item["parentSmartFolderID"] = parent_id
             item["name"] = f"{item['name']}"
-            tree[local_id] = add_folder(connector, item)
+            tree[local_id] = add_folder(target, item)
 
         else:
             remaining.append(item)
@@ -839,7 +856,6 @@ def merge_event_based_tasks(source, target, data, taskprefix="", policysuffix=""
 # #############################################################################
 @typechecked
 def map_computerFilter(source, target, data, policysuffix="") -> Dict:
-
     params = {}
 
     computerID = None
@@ -880,7 +896,6 @@ def map_computerFilter(source, target, data, policysuffix="") -> Dict:
 
 @typechecked
 def map_computerGroup(source, target, data) -> Dict:
-
     params = {}
 
     computerGroupID = None
@@ -898,7 +913,6 @@ def map_computerGroup(source, target, data) -> Dict:
 
 @typechecked
 def map_recipients(source, target, data) -> Dict:
-
     params = {}
 
     administratorIDs = None
@@ -926,7 +940,6 @@ def map_recipients(source, target, data) -> Dict:
 
 @typechecked
 def map_computerFilter_computerID(source, target, data) -> int | None:
-
     computerID = None
 
     # Map the computerID based on biosUUID
@@ -945,7 +958,6 @@ def map_computerFilter_computerID(source, target, data) -> int | None:
 
 @typechecked
 def map_computerFilter_computerGroupID(source, target, data) -> int | None:
-    
     computerGroupID = None
 
     source_groupName = source.computergroups[data.get("computerGroupID")].get("name")
@@ -976,7 +988,6 @@ def map_computerFilter_computerGroupID(source, target, data) -> int | None:
 
 @typechecked
 def map_computerFilter_policyID(source, target, data, policysuffix="") -> int | None:
-    
     policyID = None
 
     source_policyName = source.policies[data.get("policyID")].get("name")
@@ -1010,13 +1021,12 @@ def map_computerFilter_policyID(source, target, data, policysuffix="") -> int | 
 @typechecked
 def map_computerFilter_relayGroupID(source, target, data, policysuffix="") -> int | None:
     """Not supported"""
-    
+
     return 0
 
 
 @typechecked
 def map_computerFilter_smartFolderID(source, target, data) -> int | None:
-    
     smartFolderID = None
 
     source_smartFolderName = source.smartfolders[data.get("smartFolderID")].get("name")
@@ -1050,7 +1060,6 @@ def map_computerFilter_smartFolderID(source, target, data) -> int | None:
 
 @typechecked
 def map_recipients_administratorIDs(source, target, data) -> List | None:
-    
     administratorIDs = None
 
     _LOGGER.warning(f"Unable to match Administrators, ignored: {data.get('administratorIDs')}")
@@ -1074,7 +1083,6 @@ def map_recipients_administratorIDs(source, target, data) -> List | None:
 
 @typechecked
 def map_recipients_contactIDs(source, target, data) -> List | None:
-    
     contactIDs = None
 
     for id in data.get("contactIDs"):
@@ -1182,7 +1190,13 @@ def main() -> None:
                 pp(folders)
         else:
             folders = list_folders(connectors[args.source - 1])
-            merge_folders(connectors[args.destination - 1], folders)
+            merge_folders(
+                connectors[args.source - 1],
+                connectors[args.destination - 1],
+                folders,
+                args.taskprefix,
+                args.policysuffix,
+            )
 
     if args.scheduled_tasks:
         if args.destination is None:
